@@ -81,18 +81,17 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(d
 				post = post/rowSums(post)
 				cur_pi[j,] = colSums(post)/sum(post)
 			}
-			print(cur_pi)
-			pause()
 			pi_list[[EMstep]] = cur_pi
 		}
 		r = pi_list[[2]]-pi_list[[1]]
 		v = pi_list[[3]]-2*pi_list[[2]]+pi_list[[1]]
 		step_size = sum(r^2)/sum(v^2)
-		cur_pi = pi_list[[1]]-step_size*(pi_list[[2]]-pi_list[[1]])
-		print(pi_list[[1]])
-		print(pi_list[[2]])
-		print(cur_pi)
-		pause()
+		#looks like + gives the right thing, b/c if stepsize = 1, you get cur_pi = pi_list[[2]]
+		cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
+		#some may have overstepped...
+		#TODO: should they overstep? Is this the right thing to do?
+		cur_pi[cur_pi<0] = 0
 	}
+	cat("\n")
 	return(cur_pi)
 }
