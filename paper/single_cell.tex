@@ -51,13 +51,13 @@ To do so, we first approximate the distribution of read counts given all of the 
 
 We then marginalize over all the $e_{ig}$ for $g \neq j$. Doing that exactly would be difficult. Thus, we proceed with an approximation. Letting $T_{jk} = \sum_{g \neq j }e_{ig} + k$, we can Taylor exapnd around $\mathbb{E}(T_{jk})$, 
 \[
-\mathbb{E}\left(\binom{N_i}{r_{ij}} \left(\frac{k}{T_{jk}}\right)^{r_{ij}}\left(1-\frac{k}{T_{jk}}\right)^{N_i - r_{ij}}\right) \approx \left(\frac{k}{\mathbb{E}(T_{jk})} \right)^{r_{ij}}\left(1 - \frac{k}{\mathbb{E}(T_{jk})} \right)^{N_i - r_{ij}}\left(1 + C_k \text{Var}(T_{jk})\right)
+\mathbb{E}\left(\binom{N_i}{r_{ij}} \left(\frac{k}{T_{jk}}\right)^{r_{ij}}\left(1-\frac{k}{T_{jk}}\right)^{N_i - r_{ij}}\right) \approx \binom{N_i}{r_{ij}} \left(\frac{k}{\mathbb{E}(T_{jk})} \right)^{r_{ij}}\left(1 - \frac{k}{\mathbb{E}(T_{jk})} \right)^{N_i - r_{ij}}\left(1 + C_k \text{Var}(T_{jk})\right)
 \]
 where $C_k$ is a really ugly constant. Note that given the $\pi_{jk}$, we can compute $\mathbb{E}(e_{ij}) = \sum_{k=0}^\infty k \pi_{jk}$ and $\mathbb{E}(e_{ij}^2) = \sum_{k=0}^\infty k^2 \pi_{jk}$. Thus, if we let $T = \sum_g e_{ig}$ (i.e. without fixing any genes to a specific value), we can compute $\mathbb{E}(T_{jk}) = \mathbb{E}(T) - \mathbb{E}(e_{ij})+k$ and $\text{var}(T_{jk}) = \text{var}(T) - \text{var}(e_{ij})$
 
 Then, we can re-estimate the $\pi_{jk}$ by updating
 \[
-\hat{\pi}_{jk}^{(n+1)} = \frac{\sum_{i=1}^C \mathbb{P}(e_{ij} = k | r_{ij}, \{\pi_{jk}^{n}\})}{C}
+\hat{\pi}_{jk}^{(n+1)} = \frac{\sum_{i=1}^C \mathbb{P}(e_{ij} = k | r_{ij}, \{\pi_{jk}^{(n)}\})}{C}
 \]
 
 {\bf TODO: incorporate gene length. This might change the $C_k$ constant, so check that...}
