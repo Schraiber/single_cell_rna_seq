@@ -1,4 +1,5 @@
 library(MCMCpack)
+library(DAAG)
 
 sim_expression_poisson = function(n_cell, n, lambda) {
 	expression_per_cell = matrix(rpois(n_cell*length(lambda),lambda),ncol=length(lambda),byrow=TRUE)
