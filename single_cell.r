@@ -21,13 +21,64 @@ sim_expression_arbitrary = function(n_cell, n, pi_k) {
 	}
 	return(list(expression=expression_per_cell,reads=reads_per_cell)) }
 
+#Simplex projection method of Condat (2016) "Fast projection onto the simplex and the l_1 ball
+proj_simplex = function(y) {
+	v = list()
+	v = y[1]
+	vtilde = c()
+	rho = y[1] - 1
+	for (i in 2:length(y)) {
+		rho = rho + (y[i]-rho)/(length(v) + 1)
+		if (rho > y[i] - 1) {
+			v = unlist(list(v,y[i]))
+		} else {
+			vtilde = unlist(list(vtilde,v))
+			v = y[i]
+			rho = y[i] - 1
+		}
+	}
+	if (length(vtilde) > 0) {
+		for (i in 1:length(vtilde)) {
+			if (vtilde[i] > rho) {
+				v = unlist(list(v,vtilde[i]))
+				rho = rho + (vtilde[i]-rho)/length(v)
+			}
+		}
+	}
+	newV = v
+	while (TRUE) {
+		oldV = newV
+		newV = c()
+		num_removed = 0
+		for (i in 1:length(oldV)) {
+			if (oldV[i] <= rho) {
+				num_removed = num_removed + 1
+				rho = rho + (rho - oldV[i])/(length(oldV)-num_removed)
+			} else {
+				newV = unlist(list(newV, oldV[i]))
+			}
+		}
+		if (!num_removed) { break } 
+		
+	}
+	tau = rho
+	K = length(newV)
+	x = numeric(length(y))
+	for (i in 1:length(y)) {
+		x[i] = max(y[i] - tau, 0)
+	}
+	return(x)
+}
+
 approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(dat)),eps = .1) {
+	pi_per_iteration = list()
 	num_cell = nrow(dat)
 	num_gene = ncol(dat)
 	num_read = rowSums(dat)
 	#initialize
 	#cur_pi = rdirichlet(num_gene,rep(alpha,k_plus+1))
-	cur_pi = matrix(dpois(sapply(0:k_plus,rep,num_gene),lambda),ncol=k_plus+1)
+	#cur_pi = matrix(dpois(sapply(0:k_plus,rep,num_gene),lambda),ncol=k_plus+1)
+	cur_pi = matrix(1/(k_plus+1),ncol=k_plus+1,nrow=num_gene)
 	#iterate
 	k = matrix(0:k_plus,byrow=TRUE,nrow=num_cell,ncol=k_plus+1)
 	T = 0
@@ -35,6 +86,7 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(d
 	for (iter in 1:num_iter) {
 		pi_list = list()
 		pi_list[[1]] = cur_pi
+		#TODO: for the first few iterations, just do a normal EM?
 		for (EMstep in 2:3) {
 			#approximate the total number of transcripts using the pis
 			E = cur_pi%*%k[1,] #expectation of expression for every gene
@@ -86,12 +138,29 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(d
 		r = pi_list[[2]]-pi_list[[1]]
 		v = pi_list[[3]]-2*pi_list[[2]]+pi_list[[1]]
 		step_size = sum(r^2)/sum(v^2)
+		cat("\n")
+		print(c("current step is", step_size))
 		#looks like + gives the right thing, b/c if stepsize = 1, you get cur_pi = pi_list[[2]]
-		cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
+		#cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
+		cur_pi = pi_list[[1]]+2*step_size*r+step_size^2*v
+		print(sum(cur_pi<0))
+		cur_pi = t(apply(cur_pi,1,proj_simplex))
+		print(sum(cur_pi<0))
+		#Shrink the step til none escape the bounds
+		#while (sum(cur_pi<0) > 0) {
+		#	step_size = (step_size+1)/2
+			#print(c("current step is", step_size))
+			#cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
+		#	cur_pi = pi_list[[1]]+2*step_size*r+step_size^2*v
+		#} 
+		#print(c("current step is", step_size))
 		#some may have overstepped...
 		#TODO: should they overstep? Is this the right thing to do?
-		cur_pi[cur_pi<0] = 0
+		#TODO: 0 is a bad idea. Makes it impossible to get info for that one...
+		#TODO: maybe make it 1e-100?
+		#cur_pi[cur_pi<0] = 1e-100
+		pi_per_iteration[[iter]] = cur_pi
 	}
 	cat("\n")
-	return(cur_pi)
+	return(pi_per_iteration)
 }
