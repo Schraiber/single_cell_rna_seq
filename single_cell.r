@@ -70,7 +70,7 @@ proj_simplex = function(y) {
 	return(x)
 }
 
-approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(dat)),eps = .1) {
+approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_iter,lambda = rep(1,ncol(dat)),eps = .1) {
 	pi_per_iteration = list()
 	num_cell = nrow(dat)
 	num_gene = ncol(dat)
@@ -87,7 +87,12 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(d
 		pi_list = list()
 		pi_list[[1]] = cur_pi
 		#TODO: for the first few iterations, just do a normal EM?
-		for (EMstep in 2:3) {
+		if (iter > accel_iter) {
+			extra_EM = 1
+		} else {
+			extra_EM = 0
+		}
+		for (EMstep in 2:(2+extra_EM)) {
 			#approximate the total number of transcripts using the pis
 			E = cur_pi%*%k[1,] #expectation of expression for every gene
 			E2 = cur_pi%*%k[1,]^2 #expectation of expression squared for every gene
@@ -136,15 +141,23 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, lambda = rep(1,ncol(d
 			pi_list[[EMstep]] = cur_pi
 		}
 		r = pi_list[[2]]-pi_list[[1]]
-		v = pi_list[[3]]-2*pi_list[[2]]+pi_list[[1]]
-		step_size = sum(r^2)/sum(v^2)
+		if (extra_EM == 1) {
+			v = pi_list[[3]]-2*pi_list[[2]]+pi_list[[1]]
+			step_size = sum(r^2)/sum(v^2)
+			if (step_size < 1) step_size = 1 #never take a step smaller than the EM would take!
+		} else {
+			v = 0
+			step_size = .5 #to counteract the 2 in the SQUAREM update
+		}
 		cat("\n")
 		print(c("current step is", step_size))
 		#looks like + gives the right thing, b/c if stepsize = 1, you get cur_pi = pi_list[[2]]
 		#cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
 		cur_pi = pi_list[[1]]+2*step_size*r+step_size^2*v
 		print(sum(cur_pi<0))
-		cur_pi = t(apply(cur_pi,1,proj_simplex))
+		if (extra_EM == 1) {
+			cur_pi = t(apply(cur_pi,1,proj_simplex))
+		}
 		print(sum(cur_pi<0))
 		#Shrink the step til none escape the bounds
 		#while (sum(cur_pi<0) > 0) {
