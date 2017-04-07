@@ -70,15 +70,25 @@ proj_simplex = function(y) {
 	return(x)
 }
 
-approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_iter,lambda = rep(1,ncol(dat)),eps = .1) {
+approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_iter,lambda = rep(1,ncol(dat)),eps = .1,start_pi = NULL) {
 	pi_per_iteration = list()
 	num_cell = nrow(dat)
 	num_gene = ncol(dat)
 	num_read = rowSums(dat)
 	#initialize
-	#cur_pi = rdirichlet(num_gene,rep(alpha,k_plus+1))
-	#cur_pi = matrix(dpois(sapply(0:k_plus,rep,num_gene),lambda),ncol=k_plus+1)
-	cur_pi = matrix(1/(k_plus+1),ncol=k_plus+1,nrow=num_gene)
+	if (is.null(start_pi)) { 
+		#alpha = 1
+		#start_pi = rdirichlet(num_gene,rep(alpha,k_plus+1))
+		#start_pi = matrix(dpois(sapply(0:k_plus,rep,num_gene),lambda),ncol=k_plus+1)
+		#start_pi = matrix(1/(k_plus+1),ncol=k_plus+1,nrow=num_gene)
+		start_pi = matrix(dnbinom(sapply(0:k_plus,rep,num_gene),size=1,mu=2),ncol=k_plus+1)
+	} else {
+		if (any(dim(start_pi) != c(num_gene,k_plus+1))) { 
+			stop("Dimension of start_pi not = (num_gene, k_plus+1)")
+		}
+	}
+	cur_pi = start_pi	
+
 	#iterate
 	k = matrix(0:k_plus,byrow=TRUE,nrow=num_cell,ncol=k_plus+1)
 	T = 0
@@ -101,7 +111,7 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_i
 			T = sum(E)
 			#loop over genes
 			for (j in 1:num_gene) {
-				if (j%%(num_gene/20) == 1) {
+				if (j%%(num_gene/20) == 0) {
 					cat("Iteration", iter, "EM step", EMstep-1, "gene", j, "\r")
 					flush.console()
 				}
@@ -111,7 +121,7 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_i
 				#fix the expression of the current gene
 				Tjk = T- E[j] + k
 				varTjk = varT - varE[j]
-				
+
 				#This version has no penalty
 				#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat
 				
@@ -122,21 +132,25 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_i
 				#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat+(num_read-dat[,j]-2)*log((T-k))
 				
 				#this formula comes from actually explicitly including E(1/T) and approximating with Taylor series
-				#ETinv = 1/T+1/T^3*varT
-				#logLike = dat[,j]*log(k*ETinv)+(num_read-dat[,j])*log(1-k*ETinv)+pi_mat
+				#ETinv = 1/Tjk+1/T^3*varTjk
+				#logLike = dat[,j]*log(k*ETinv)+(num_read-dat[,j])*log(1-k*ETinv)
+				#penalty = 0
 				
 				#This version comes from expanding E(binomial)
-				Ck= exp(log(dat[,j]) + log(Tjk^2-4*Tjk*k+2*k^2+(Tjk-2*k)^2*dat[,j]) + log(varTjk) - log(2) - 2*log(Tjk) - 2*log(Tjk-k) )
-				penalty = log(1+Ck)
-				logLike = dat[,j]*log(k/Tjk) + (num_read-dat[,j])*log(1-k/Tjk)+penalty+pi_mat
-				
-				#replace the nans with 0s which they should be
-				bad_0 = which(is.na(logLike[,1]))
-				logLike[bad_0] = (num_read*log(T))[bad_0]
+				penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat[,j]+1) + Tjk^2*dat[,j]*(1+dat[,j]))/ 
+					(2*Tjk^2*(Tjk-k)^2)*varTjk)
+					
+				logLike = dbinom(dat[,j], num_read,k/Tjk,log=TRUE) + penalty
+
+				#compute posterio
+				logPost = logLike + pi_mat
+					
 				#compute posterior
-				post = exp(logLike-apply(logLike,1,max))
+				post = exp(logPost-apply(logPost,1,max))
 				post = post/rowSums(post)
-				cur_pi[j,] = colSums(post)/sum(post)
+	
+				#update pi
+				cur_pi[j,] = colSums(post)/num_cell
 			}
 			pi_list[[EMstep]] = cur_pi
 		}
@@ -144,35 +158,44 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_i
 		if (extra_EM == 1) {
 			v = pi_list[[3]]-2*pi_list[[2]]+pi_list[[1]]
 			step_size = sum(r^2)/sum(v^2)
-			if (step_size < 1) step_size = 1 #never take a step smaller than the EM would take!
+			#step_size[step_size<1] = 1 #never take a step smaller than the EM would take!
+			#step_size[step_size>5] = 5 #don't go toooooooo far
 		} else {
 			v = 0
 			step_size = .5 #to counteract the 2 in the SQUAREM update
 		}
 		cat("\n")
-		print(c("current step is", step_size))
-		#looks like + gives the right thing, b/c if stepsize = 1, you get cur_pi = pi_list[[2]]
+		print(c("current step summary is", summary(step_size)))
 		#cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
 		cur_pi = pi_list[[1]]+2*step_size*r+step_size^2*v
-		print(sum(cur_pi<0))
 		if (extra_EM == 1) {
+			#Shrink the step til none escape the bounds
+			#print(pi_list[[1]][1,])
+			#print(cur_pi[1,])
+			#while (sum(cur_pi<0) > 0) {
+			#	step_size = (step_size+1)/2
+			#	#cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
+			#	cur_pi = pi_list[[1]]+2*step_size*r+step_size^2*v
+			#}
+			#project onto Simplex
+			print(cur_pi[626,])
 			cur_pi = t(apply(cur_pi,1,proj_simplex))
+			print(cur_pi[626,])
+			#set any that are 0 to 1e-100
+			#NB: this loses the normalization...
+			#cur_pi[cur_pi == 0] = 1e-100
 		}
-		print(sum(cur_pi<0))
-		#Shrink the step til none escape the bounds
-		#while (sum(cur_pi<0) > 0) {
-		#	step_size = (step_size+1)/2
-			#print(c("current step is", step_size))
-			#cur_pi = pi_list[[1]]+step_size*(pi_list[[2]]-pi_list[[1]])
-		#	cur_pi = pi_list[[1]]+2*step_size*r+step_size^2*v
-		#} 
-		#print(c("current step is", step_size))
-		#some may have overstepped...
-		#TODO: should they overstep? Is this the right thing to do?
-		#TODO: 0 is a bad idea. Makes it impossible to get info for that one...
-		#TODO: maybe make it 1e-100?
-		#cur_pi[cur_pi<0] = 1e-100
+		print(c("current mean step is", mean(step_size)))
 		pi_per_iteration[[iter]] = cur_pi
+		if (iter > 1) {
+			par_change = sqrt(sum(pi_per_iteration[[iter]]-pi_per_iteration[[iter-1]])^2)
+		} else {
+			par_change = sqrt(sum(pi_per_iteration[[iter]]-start_pi)^2)
+		}
+		print(c("par change is", par_change))
+		if (par_change<1e-50) {
+			break
+		}
 	}
 	cat("\n")
 	return(pi_per_iteration)
