@@ -70,7 +70,7 @@ proj_simplex = function(y) {
 	return(x)
 }
 
-single_gene_update(pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty = FALSE) {	
+single_gene_update = function(pi_gene, dat_gene, k, T, Ej, varT, varEj, num_read, penalty_cutoff = .1) {	
 	#to deal with dumb vectorization...
 	num_cell = length(dat_gene)
 	k_plus = length(pi_gene)-1
@@ -80,9 +80,9 @@ single_gene_update(pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty 
 	Tjk = T- Ej + k
 	varTjk = varT - varEj
 
-	#This version comes from expanding E(binomial)
-	if (use_penalty) {
-		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat[,j]+1) + Tjk^2*dat[,j]*(1+dat[,j]))/ 
+	#Use the penalty only when you need it
+	if (any(dat_gene/num_read > penalty_cutoff)) {
+		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat_gene+1) + Tjk^2*dat_gene*(1+dat_gene))/ 
 			(2*Tjk^2*(Tjk-k)^2)*varTjk)
 	} else {
 		penalty = 0
@@ -102,65 +102,35 @@ single_gene_update(pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty 
 }
 
 #pi_vec is the flattened matrix
-EM_update = function(pi_vec, dat) {
+EM_update = function(pi_vec, dat, k_plus) {
+	#get some useful quantities
 	num_cell = nrow(dat)
 	num_gene = ncol(dat)
 	num_read = rowSums(dat)
-	cur_pi = matrix(pi_vec,nrow=num_gene,byrow=TRUE)
-	plot(cur_pi[1,],type="l")
-	k_plus = ncol(cur_pi)-1
-	print(c(num_cell,num_gene,k_plus))
+
+	#make some useful matricies
+	cur_pi = matrix(pi_vec,ncol=k_plus+1,byrow=TRUE)
 	k = matrix(0:k_plus,byrow=TRUE,nrow=num_cell,ncol=k_plus+1)
+	
 	#approximate the total number of transcripts using the pis
 	E = cur_pi%*%k[1,] #expectation of expression for every gene
 	E2 = cur_pi%*%k[1,]^2 #expectation of expression squared for every gene
 	varE = E2-E^2 #variance of expression for every gene
 	varT = sum(varE)
 	T = sum(E)
+	
+	#run EM for every gene
 	for (j in 1:num_gene) {
 		if (j%%(num_gene/20) == 1) {
 			cat("EM update on gene", j, "\r")
 			flush.console()
 		}
-		#to deal with dumb vectorization...
-		pi_mat = matrix(log(cur_pi[j,]), nrow=num_cell, ncol = k_plus+1, byrow=TRUE)
-
-		#fix the expression of the current gene
-		Tjk = T- E[j] + k
-		varTjk = varT - varE[j]
-
-		#This version has no penalty
-		#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat
-		
-		#This penalty comes from Taylor expansion on E(log(T-K))
-		#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat-(num_read-dat[,j])/(2*(T-k)^2)*varT
-		
-		#This penalty comes from Taylor expansion on E((T-k)^(n-r)) and then assuming the log goes through
-		#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat+(num_read-dat[,j]-2)*log((T-k))
-		
-		#this formula comes from actually explicitly including E(1/T) and approximating with Taylor series
-		#ETinv = 1/Tjk+1/T^3*varTjk
-		#logLike = dat[,j]*log(k*ETinv)+(num_read-dat[,j])*log(1-k*ETinv)
-		#penalty = 0
-		
-		#This version comes from expanding E(binomial)
-		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat[,j]+1) + Tjk^2*dat[,j]*(1+dat[,j]))/ 
-			(2*Tjk^2*(Tjk-k)^2)*varTjk)
-			
-		logLike = dbinom(dat[,j], num_read,k/Tjk,log=TRUE) + penalty
-
-		#compute posterio
-		logPost = logLike + pi_mat
-			
-		#compute posterior
-		post = exp(logPost-apply(logPost,1,max))
-		post = post/rowSums(post)
-
-		#update pi
-		cur_pi[j,] = colSums(post)/num_cell
+		start = (kplus+1)*(j-1)+1
+		end = (kplus+1)*j
+		pi_vec[start:end] = single_gene_update(pi_vec[start:end], dat[,j], k, T, E[j], varT, varE[j], num_read)
 	}
 	cat("\n")
-	as.vector(t(cur_pi))
+	as.vector(pi_vec)
 }
 
 approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_iter,lambda = rep(1,ncol(dat)),eps = .1,start_pi = NULL) {
