@@ -70,6 +70,68 @@ proj_simplex = function(y) {
 	return(x)
 }
 
+#pi_vec is the flattened matrix
+EM_update = function(pi_vec, dat) {
+	num_cell = nrow(dat)
+	num_gene = ncol(dat)
+	num_read = rowSums(dat)
+	cur_pi = matrix(pi_vec,nrow=num_gene,byrow=TRUE)
+	plot(cur_pi[1,],type="l")
+	k_plus = ncol(cur_pi)-1
+	print(c(num_cell,num_gene,k_plus))
+	k = matrix(0:k_plus,byrow=TRUE,nrow=num_cell,ncol=k_plus+1)
+	#approximate the total number of transcripts using the pis
+	E = cur_pi%*%k[1,] #expectation of expression for every gene
+	E2 = cur_pi%*%k[1,]^2 #expectation of expression squared for every gene
+	varE = E2-E^2 #variance of expression for every gene
+	varT = sum(varE)
+	T = sum(E)
+	for (j in 1:num_gene) {
+		if (j%%(num_gene/20) == 1) {
+			cat("EM update on gene", j, "\r")
+			flush.console()
+		}
+		#to deal with dumb vectorization...
+		pi_mat = matrix(log(cur_pi[j,]), nrow=num_cell, ncol = k_plus+1, byrow=TRUE)
+
+		#fix the expression of the current gene
+		Tjk = T- E[j] + k
+		varTjk = varT - varE[j]
+
+		#This version has no penalty
+		#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat
+		
+		#This penalty comes from Taylor expansion on E(log(T-K))
+		#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat-(num_read-dat[,j])/(2*(T-k)^2)*varT
+		
+		#This penalty comes from Taylor expansion on E((T-k)^(n-r)) and then assuming the log goes through
+		#logLike = dat[,j]*log(k)+(num_read-dat[,j])*log(T-k)+pi_mat+(num_read-dat[,j]-2)*log((T-k))
+		
+		#this formula comes from actually explicitly including E(1/T) and approximating with Taylor series
+		#ETinv = 1/Tjk+1/T^3*varTjk
+		#logLike = dat[,j]*log(k*ETinv)+(num_read-dat[,j])*log(1-k*ETinv)
+		#penalty = 0
+		
+		#This version comes from expanding E(binomial)
+		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat[,j]+1) + Tjk^2*dat[,j]*(1+dat[,j]))/ 
+			(2*Tjk^2*(Tjk-k)^2)*varTjk)
+			
+		logLike = dbinom(dat[,j], num_read,k/Tjk,log=TRUE) + penalty
+
+		#compute posterio
+		logPost = logLike + pi_mat
+			
+		#compute posterior
+		post = exp(logPost-apply(logPost,1,max))
+		post = post/rowSums(post)
+
+		#update pi
+		cur_pi[j,] = colSums(post)/num_cell
+	}
+	cat("\n")
+	as.vector(t(cur_pi))
+}
+
 approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_iter,lambda = rep(1,ncol(dat)),eps = .1,start_pi = NULL) {
 	pi_per_iteration = list()
 	num_cell = nrow(dat)
@@ -179,7 +241,7 @@ approximate_EM = function(dat, num_iter = 10,k_plus = 100, accel_iter = .5*num_i
 			#}
 			#project onto Simplex
 			print(cur_pi[626,])
-			cur_pi = t(apply(cur_pi,1,proj_simplex))
+			#cur_pi = t(apply(cur_pi,1,proj_simplex))
 			print(cur_pi[626,])
 			#set any that are 0 to 1e-100
 			#NB: this loses the normalization...
