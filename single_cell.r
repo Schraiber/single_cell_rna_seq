@@ -70,7 +70,7 @@ proj_simplex = function(y) {
 	return(x)
 }
 
-single_gene_update(pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty = FALSE) {	
+single_gene_update = function (pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty = FALSE) {	
 	#to deal with dumb vectorization...
 	num_cell = length(dat_gene)
 	k_plus = length(pi_gene)-1
@@ -82,7 +82,7 @@ single_gene_update(pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty 
 
 	#This version comes from expanding E(binomial)
 	if (use_penalty) {
-		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat[,j]+1) + Tjk^2*dat[,j]*(1+dat[,j]))/ 
+		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat_gene+1) + Tjk^2*dat_gene*(1+dat_gene))/ 
 			(2*Tjk^2*(Tjk-k)^2)*varTjk)
 	} else {
 		penalty = 0
