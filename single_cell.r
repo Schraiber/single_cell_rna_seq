@@ -70,6 +70,37 @@ proj_simplex = function(y) {
 	return(x)
 }
 
+single_gene_update(pi_gene, dat_gene, T, Ej, varT, varEj, num_read, use_penalty = FALSE) {	
+	#to deal with dumb vectorization...
+	num_cell = length(dat_gene)
+	k_plus = length(pi_gene)-1
+	pi_mat = matrix(log(pi_gene), nrow=num_cell, ncol = k_plus+1, byrow=TRUE)
+
+	#fix the expression of the current gene
+	Tjk = T- Ej + k
+	varTjk = varT - varEj
+
+	#This version comes from expanding E(binomial)
+	if (use_penalty) {
+		penalty = log( 1 +  (k^2*num_read*(num_read+1)-2*Tjk*k*num_read*(dat[,j]+1) + Tjk^2*dat[,j]*(1+dat[,j]))/ 
+			(2*Tjk^2*(Tjk-k)^2)*varTjk)
+	} else {
+		penalty = 0
+	}
+		
+	logLike = dbinom(dat_gene, num_read,k/Tjk,log=TRUE) + penalty
+
+	#compute posterior
+	logPost = logLike + pi_mat
+		
+	#compute posterior
+	post = exp(logPost) #-apply(logPost,1,max))
+	post = post/rowSums(post)
+
+	#update pi
+	return(colSums(post)/num_cell)
+}
+
 #pi_vec is the flattened matrix
 EM_update = function(pi_vec, dat) {
 	num_cell = nrow(dat)
